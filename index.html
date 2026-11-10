@@ -62,6 +62,13 @@ a{color:var(--brand)}
 .p-moi{background:var(--warn-soft);color:var(--warn)} .p-xn{background:var(--brand-soft);color:var(--brand)}
 .p-ht{background:var(--ok-soft);color:var(--ok)} .p-huy{background:var(--bad-soft);color:var(--bad)}
 .p-acc{background:var(--accent-soft);color:var(--accent)}
+.p-ex{background:var(--line);color:var(--muted)} .bk.s-ex{border-left-color:var(--muted)}
+.eline{border:1px solid var(--line);border-radius:10px;padding:10px;display:flex;flex-direction:column;gap:8px}
+.eline .row{gap:8px}
+.eline input.pr-in{width:120px}
+details.addbox{border:1px dashed var(--line);border-radius:10px;padding:10px}
+details.addbox summary{cursor:pointer;font-weight:600}
+.rtbl td{vertical-align:middle}
 label{font-size:.83rem;font-weight:600;color:var(--muted);display:block;margin-bottom:4px}
 input,select,textarea{width:100%;font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:9px 11px}
 textarea{min-height:70px;resize:vertical}
@@ -498,6 +505,8 @@ const todayISO=(off=0)=>{const d=new Date();d.setDate(d.getDate()+off);return d.
 const viDate=iso=>{if(!iso)return '';const [y,m,d]=iso.split('-');return d+'/'+m+'/'+y;};
 const svc=id=>st.services.find(s=>s.id===id);
 const pkg=id=>st.packages.find(p=>p.id===id);
+const isManual=b=>(b.items||[]).some(i=>i.manual);
+const uid=p=>p+Date.now().toString(36)+Math.floor(Math.random()*1000);
 const zone=id=>(st.zones||[]).find(z=>z.id===id);
 const zoneGroups=()=>{const m=[];(st.zones||[]).filter(z=>z.on).forEach(z=>{let g=m.find(x=>x.grp===z.grp);if(!g){g={grp:z.grp,list:[]};m.push(g);}g.list.push(z);});return m;};
 const framed=(()=>{try{return window.self!==window.top;}catch(e){return true;}})();
@@ -513,11 +522,16 @@ function stripVN(s){return String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'')
 /* ====================== TÍNH GIÁ ====================== */
 function findPromo(code){if(!code)return null;code=code.trim().toUpperCase();return st.promos.find(p=>p.code.toUpperCase()===code)||null;}
 function quote(b){
- const lines=[];
+ const lines=[],extras=[];
  (b.items||[]).forEach(it=>{
-  if(it.k==='p'){const p=pkg(it.id);if(!p)return;lines.push({k:'p',id:p.id,g:p.g,name:p.name,unit:'gói',price:p.price,qty:it.qty,amount:p.price*it.qty,order:p.items.some(([sid])=>{const s=svc(sid);return s&&s.order;})});}
-  else{const s=svc(it.id);if(!s)return;lines.push({k:'s',id:s.id,g:s.g,name:s.name,unit:s.unit,price:s.price,qty:it.qty,amount:s.price*it.qty,order:s.order});}
+  const qty=Math.max(1,parseInt(it.qty,10)||1);
+  const ov=(it.price!==undefined&&it.price!==null&&it.price!=='')?Math.max(0,Number(it.price)||0):null;
+  if(it.k==='x'){extras.push({k:'x',id:it.id,name:it.name||'Phụ thu',amount:Math.round(Number(it.price)||0)});return;}
+  if(it.k==='c'){const pr=ov===null?0:ov;lines.push({k:'c',id:it.id,g:GMAP[it.g]?it.g:'dd',name:it.name||'Dịch vụ khác',unit:it.unit||'lần',price:pr,list:null,ov:false,qty,amount:pr*qty,order:false,manual:!!it.manual});return;}
+  if(it.k==='p'){const p=pkg(it.id);if(!p)return;const pr=ov===null?p.price:ov;lines.push({k:'p',id:p.id,g:p.g,name:p.name,unit:'gói',price:pr,list:p.price,ov:ov!==null&&ov!==p.price,qty,amount:pr*qty,order:p.items.some(([sid])=>{const s=svc(sid);return s&&s.order;})});}
+  else{const s=svc(it.id);if(!s)return;const pr=ov===null?s.price:ov;lines.push({k:'s',id:s.id,g:s.g,name:s.name,unit:s.unit,price:pr,list:s.price,ov:ov!==null&&ov!==s.price,qty,amount:pr*qty,order:s.order});}
  });
+ const extrasTotal=extras.reduce((a,x)=>a+x.amount,0);
  const subtotal=lines.reduce((a,l)=>a+l.amount,0);
  const f=st.fees;const zz=b.zone&&b.zone!=='other'?zone(b.zone):null;const km=zz?0:Math.max(0,Number(b.km)||0);
  const travel=zz?(Number(zz.fee)||0):Math.max(0,Math.ceil(km-f.freeKm))*f.perKm;
@@ -538,8 +552,8 @@ function quote(b){
    else{discount=p.type==='pct'?base*p.value/100:Math.min(p.value,base);if(p.max&&discount>p.max)discount=p.max;discount=Math.round(discount/1000)*1000;promoOk=true;promoMsg='Áp dụng: '+p.name;}
   }
  }
- const total=Math.max(0,subtotal+travel+timeFee+holidayFee-discount);
-return {lines,subtotal,travel,km,zoneObj:zz,timeFee,timeLbl,holidayFee,discount,promoMsg,promoOk,total,needsOrder:lines.some(l=>l.order)};
+ const total=Math.max(0,subtotal+travel+timeFee+holidayFee-discount+extrasTotal);
+return {lines,extras,extrasTotal,subtotal,travel,km,zoneObj:zz,timeFee,timeLbl,holidayFee,discount,promoMsg,promoOk,total,needsOrder:lines.some(l=>l.order)};
 }
 
 /* ====================== VIETQR ====================== */
@@ -589,7 +603,7 @@ async function pullConfig(){
 }
 function push(op){st.queue.push(op);save();updateSyncChip();flush();}
 async function flush(){
- if(syncBusy||!isAdminSync())return;syncBusy=true;
+ if(syncBusy||!isAdminSync())return;syncBusy=true;let remapped=false;
  try{
   while(st.queue.length){
    const op=st.queue[0];
@@ -597,7 +611,8 @@ async function flush(){
     const j=await api(op.a,Object.assign({key:st.sync.key},op.p));
     if(op.a==='adminCreateBooking'&&j.booking){
      const nid=j.booking.id,oid=op.localId;const b=st.bookings.find(x=>x.id===oid);
-     if(b){b.id=nid;b.code=j.booking.code;b.srv=true;delete b.queued;}
+     if(b){b.id=nid;b.code=j.booking.code;b.srv=true;delete b.queued;remapped=true;}
+     if(edB&&edB.id===oid)edB.id=nid;
      st.queue.slice(1).forEach(q=>{const d=q.p&&q.p.data;if(d&&d.id===oid)d.id=nid;if(d&&d.bookingId===oid)d.bookingId=nid;if(q.p&&q.p.id===oid)q.p.id=nid;});
      st.records.forEach(r=>{if(r.bookingId===oid)r.bookingId=nid;});
     }
@@ -609,7 +624,8 @@ async function flush(){
   }
   st.sync.err='';
  }catch(e){st.sync.err=errText(e);}
- finally{syncBusy=false;save();updateSyncChip();}
+ finally{syncBusy=false;save();updateSyncChip();
+  if(remapped&&curRoute()==='admin'&&unlocked&&!editRec&&!$('#modalRoot').innerHTML){const ae=document.activeElement;if(!(ae&&/INPUT|TEXTAREA|SELECT/.test(ae.tagName)&&$('#view').contains(ae)))render();}}
 }
 async function pullAll(silent){
  if(!isAdminSync())return false;
@@ -745,6 +761,7 @@ function vBooking(){
  let h='<h1>'+(draftFromAdmin?'Thêm lịch hẹn':'Đặt lịch chăm sóc tại nhà')+'</h1>';
  h+='<form id="bkForm" class="stack" novalidate>';
  h+='<section class="card stack"><h2>Dịch vụ đã chọn</h2><div id="bkItems">'+bkItemsHTML()+'</div><div class="row"><a class="btn sm" href="#prices">+ Dịch vụ lẻ</a><a class="btn sm" href="#offers">+ Gói ưu đãi</a></div></section>';
+ if(draftFromAdmin)h+='<section class="card stack"><h2>Dịch vụ nhập tay & phụ thu</h2><div class="small muted">Dùng cho dịch vụ không có trong bảng giá, hoặc khoản phụ thu riêng của lịch này.</div><div class="grid2"><div><label for="bc-n">Tên dịch vụ</label><input id="bc-n" placeholder="Ví dụ: Rửa tai, cắt móng"></div><div><label for="bc-g">Nhóm</label>'+groupSelect('bc-g','dd')+'</div><div><label for="bc-p">Đơn giá (đ)</label><input id="bc-p" type="number" min="0" step="1000" inputmode="numeric"></div><div><label for="bc-q">Số lượng</label><input id="bc-q" type="number" min="1" value="1" inputmode="numeric"></div></div><button type="button" class="btn sm" data-act="bk-addcus">+ Thêm dịch vụ nhập tay</button><div class="grid2"><div><label for="bx-n">Phụ thu hoặc giảm thêm</label><input id="bx-n" placeholder="Ví dụ: Phụ thu vật tư, nhà xa"></div><div><label for="bx-a">Số tiền (đ, số âm = giảm)</label><input id="bx-a" type="number" step="1000"></div></div><button type="button" class="btn sm" data-act="bk-addx">+ Thêm phụ thu</button></section>';
  h+='<section class="card stack"><h2>Thông tin liên hệ</h2><div class="grid2">'+
   fld('name','Họ tên người liên hệ','text','Nguyễn Văn A')+fld('phone','Số điện thoại (Zalo)','tel','09xx xxx xxx')+
   fld('patient','Họ tên người bệnh','text','Để trống nếu là người liên hệ')+fld('yob','Năm sinh người bệnh','number','1950')+'</div>'+
@@ -768,11 +785,13 @@ function zoneSelect(){
  return '<div><label for="f-zone">Phường/xã (tên mới sau sáp nhập)</label><select id="f-zone">'+o+'</select><div class="small muted" style="margin-top:4px">Trong ngoặc là tên phường/xã cũ để dễ tìm.</div></div>';
 }
 function zoneFeeText(z){return z.fee?'Phí đi lại '+fmt(z.fee):'Miễn phí đi lại';}
+function groupSelect(id,val){return '<select id="'+id+'">'+GROUPS.map(g=>'<option value="'+g.id+'"'+(g.id===val?' selected':'')+'>'+esc(g.short)+'</option>').join('')+'</select>';}
+function catOptions(withPkg,byName){return GROUPS.map(g=>'<optgroup label="'+esc(g.short)+'">'+st.services.filter(x=>x.g===g.id&&x.on).map(x=>'<option value="'+(byName?esc(x.name):'s:'+x.id)+'">'+esc(x.name)+(byName?'':' – '+fmt(x.price))+'</option>').join('')+'</optgroup>').join('')+(withPkg?'<optgroup label="Gói">'+st.packages.filter(x=>x.on).map(x=>'<option value="p:'+x.id+'">'+esc(x.name)+' – '+fmt(x.price)+'</option>').join('')+'</optgroup>':'');}
 function fld(k,lab,type,ph){return '<div><label for="f-'+k+'">'+lab+'</label><input id="f-'+k+'" type="'+type+'" value="'+esc(draft[k])+'" placeholder="'+esc(ph)+'"'+(type==='number'?' inputmode="numeric" min="0"':'')+'></div>';}
 function bkItemsHTML(){
  if(!st.cart.length)return '<div class="muted">Chưa chọn dịch vụ nào.</div>';
  const q=quote({items:st.cart});
- return q.lines.map(l=>'<div class="svc"><div><div class="nm">'+esc(l.name)+'</div><div class="small muted num">'+fmt(l.price)+'/'+esc(l.unit)+'</div>'+(l.order?'<div class="flag">Cần đơn hoặc y lệnh bác sĩ</div>':'')+'</div><div class="pr num">'+fmt(l.amount)+'</div><div></div><div class="act">'+qtyCtl(l.k,l.id)+'</div></div>').join('');
+ return q.lines.map(l=>'<div class="svc"><div><div class="nm">'+esc(l.name)+(l.k==='c'?' <span class="pill p-acc">nhập tay</span>':'')+'</div><div class="small muted num">'+fmt(l.price)+'/'+esc(l.unit)+'</div>'+(l.order?'<div class="flag">Cần đơn hoặc y lệnh bác sĩ</div>':'')+'</div><div class="pr num">'+fmt(l.amount)+'</div><div></div><div class="act">'+qtyCtl(l.k,l.id)+'</div></div>').join('')+q.extras.map(x=>'<div class="svc"><div><div class="nm">'+esc(x.name)+' <span class="pill p-moi">'+(x.amount<0?'giảm thêm':'phụ thu')+'</span></div></div><div class="pr num">'+(x.amount<0?'−'+fmt(-x.amount):fmt(x.amount))+'</div><div></div><div class="act"><button type="button" class="btn sm danger" data-act="bk-delx" data-id="'+esc(x.id)+'">Bỏ</button></div></div>').join('');
 }
 function bkSumHTML(){
  const q=quote(Object.assign({},draft,{items:st.cart}));
@@ -782,6 +801,7 @@ function bkSumHTML(){
  if(q.timeFee)h+='<div class="sum"><span>'+q.timeLbl+'</span><span class="num">'+fmt(q.timeFee)+'</span></div>';
  if(q.holidayFee)h+='<div class="sum"><span>Phụ thu lễ, Tết ('+st.fees.holidayPct+'%)</span><span class="num">'+fmt(q.holidayFee)+'</span></div>';
  if(q.discount)h+='<div class="sum disc"><span>Giảm giá ('+esc(draft.promo.toUpperCase())+')</span><span class="num">−'+fmt(q.discount)+'</span></div>';
+ q.extras.forEach(x=>{h+='<div class="sum'+(x.amount<0?' disc':'')+'"><span>'+esc(x.name)+'</span><span class="num">'+(x.amount<0?'−'+fmt(-x.amount):fmt(x.amount))+'</span></div>';});
  if(q.promoMsg)h+='<div class="small '+(q.promoOk?'disc':'flag')+'">'+esc(q.promoMsg)+'</div>';
  h+='<div class="sum tot"><span>Tạm tính</span><span class="num">'+fmt(q.total)+'</span></div>';
  if(q.needsOrder)h+='<div class="note">Đơn có tiêm hoặc truyền: vui lòng chuẩn bị đơn thuốc hoặc y lệnh của bác sĩ.</div>';
@@ -809,7 +829,7 @@ function submitBooking(){
  save();
  const fromAdmin=draftFromAdmin;draftFromAdmin=false;
  if(fromAdmin){
-  if(isAdminSync()){b.queued=true;push({a:'adminCreateBooking',p:{data:pick(b,BK_FIELDS)},localId:b.id});}
+  if(isAdminSync()){b.queued=true;st.queue.push({a:'adminCreateBooking',p:{data:pick(b,BK_FIELDS)},localId:b.id});push({a:'updateBooking',p:{data:pick(b,BK_FIELDS)}});}
   adminTab='appts';location.hash='#admin';toast('Đã thêm lịch '+b.code);return;
  }
  render();
@@ -823,6 +843,7 @@ function bookingText(b){
  const q=quote(b);const B=st.biz;
  let t='ĐẶT LỊCH – '+B.name+'\nMã: '+b.code+'\nNgười liên hệ: '+b.name+' – '+b.phone+'\nNgười bệnh: '+(b.patient||b.name)+(b.yob?' ('+b.yob+')':'')+'\nĐịa chỉ: '+b.addr+(zone(b.zone)?', '+zone(b.zone).name+' ('+zone(b.zone).grp+')':b.zone==='other'?' (ngoài khu vực ưu tiên)':'')+(b.km?' (~'+b.km+' km)':'')+'\nThời gian: '+b.time+' ngày '+viDate(b.date)+(b.holiday?' (lễ/Tết)':'')+'\nDịch vụ:\n';
  q.lines.forEach(l=>{t+='- '+l.name+(l.qty>1?' × '+l.qty:'')+': '+fmt(l.amount)+'\n';});
+ q.extras.forEach(x=>{t+='- '+x.name+': '+(x.amount<0?'-'+fmt(-x.amount):fmt(x.amount))+'\n';});
  if(q.travel)t+='Di chuyển: '+fmt(q.travel)+'\n';
  if(q.timeFee)t+=q.timeLbl+': '+fmt(q.timeFee)+'\n';
  if(q.holidayFee)t+='Phụ thu lễ/Tết: '+fmt(q.holidayFee)+'\n';
@@ -844,11 +865,11 @@ function showBookingDone(b,sent,err){
 
 /* ====================== MODAL ====================== */
 function openModal(html){$('#modalRoot').innerHTML='<div class="modal" data-act="bgclose"><div class="box" role="dialog" aria-modal="true">'+html+'</div></div>';}
-function closeModal(){$('#modalRoot').innerHTML='';}
+function closeModal(){$('#modalRoot').innerHTML='';edB=null;}
 
 /* ====================== VIEW: QUẢN LÝ ====================== */
 let zoneFilter='',unlocked=false,adminTab='appts',apptFilter='all',editRec=null,repMonth=todayISO().slice(0,7);
-const STATUS={moi:'Chờ xác nhận',xn:'Đã xác nhận',ht:'Hoàn thành',huy:'Đã hủy'};
+const STATUS={moi:'Chờ xác nhận',xn:'Đã xác nhận',ht:'Hoàn thành',huy:'Đã hủy',ex:'Không tính doanh thu'};
 function vAdmin(){
  if(!unlocked){return '<h1>Quản lý</h1><div class="card stack"><div>Khu vực dành cho điều dưỡng quản lý lịch hẹn, phiếu chăm sóc và bảng giá.</div><div><label for="pinIn">Mã PIN</label><input id="pinIn" type="password" inputmode="numeric" placeholder="Mặc định: 1234"></div><button class="btn pri" data-act="unlock">Mở khóa</button><div class="small muted">Mã PIN chỉ che giao diện, không phải bảo mật. Dữ liệu lưu trong trình duyệt của máy này.</div></div>';}
  const tabs=[['appts','Lịch hẹn'],['records','Phiếu chăm sóc'],['prices','Giá & dịch vụ'],['promos','Khuyến mãi'],['report','Báo cáo'],['settings','Cài đặt']];
@@ -859,9 +880,9 @@ function vAdmin(){
  return h;
 }
 function aAppts(){
- const t=todayISO(),m=t.slice(0,7);const bs=st.bookings;
+ const t=todayISO(),m=t.slice(0,7);const bs=st.bookings.filter(b=>!isManual(b));
  const today=bs.filter(b=>b.date===t&&b.status!=='huy').length,pending=bs.filter(b=>b.status==='moi').length;
- const doneM=bs.filter(b=>b.status==='ht'&&b.date.slice(0,7)===m);const rev=doneM.reduce((a,b)=>a+(b.total||0),0);
+ const doneAll=st.bookings.filter(b=>b.status==='ht'&&b.date.slice(0,7)===m);const doneM=doneAll.filter(b=>!isManual(b));const rev=doneAll.reduce((a,b)=>a+quote(b).total,0);
  let h='<div class="tiles"><div class="tile"><div class="v">'+today+'</div><div class="k">Lịch hôm nay</div></div><div class="tile"><div class="v" style="color:var(--warn)">'+pending+'</div><div class="k">Chờ xác nhận</div></div><div class="tile"><div class="v">'+doneM.length+'</div><div class="k">Hoàn thành tháng này</div></div><div class="tile"><div class="v num" style="font-size:1.05rem">'+fmt(rev)+'</div><div class="k">Doanh thu tháng này</div></div></div>';
  h+='<div class="row" style="justify-content:space-between"><div class="chips">'+[['all','Tất cả'],['today','Hôm nay'],['moi','Chờ xác nhận'],['xn','Đã xác nhận'],['ht','Hoàn thành'],['huy','Đã hủy']].map(f=>'<button class="chip'+(apptFilter===f[0]?' on':'')+'" data-act="af" data-f="'+f[0]+'">'+f[1]+'</button>').join('')+'</div><button class="btn sm pri" data-act="newAppt">+ Thêm lịch (khách gọi)</button></div>';
  h+='<div><label for="zf">Lọc theo khu vực (xếp lộ trình)</label><select id="zf"><option value="">Tất cả khu vực</option>'+zoneGroups().map(g=>'<optgroup label="'+esc(g.grp)+'">'+g.list.map(z=>'<option value="'+z.id+'"'+(zoneFilter===z.id?' selected':'')+'>'+esc(z.name)+'</option>').join('')+'</optgroup>').join('')+'<option value="other"'+(zoneFilter==='other'?' selected':'')+'>Khu vực khác</option></select></div>';
@@ -874,13 +895,15 @@ function aAppts(){
   h+='<div class="card bk s-'+b.status+' stack" style="gap:6px"><div class="row" style="justify-content:space-between"><b class="num">'+esc(b.time)+' · '+viDate(b.date)+'</b><span class="pill p-'+b.status+'">'+STATUS[b.status]+'</span></div>';
   h+='<div><b>'+esc(b.patient||b.name)+'</b>'+(b.yob?' <span class="muted">('+esc(b.yob)+')</span>':'')+' · <span class="small muted">'+esc(b.code)+'</span></div>';
   h+='<div class="small">'+esc(b.name)+' – '+esc(b.phone)+'<br>'+esc(b.addr)+(b.km?' · '+esc(b.km)+' km':'')+'</div>'+(zone(b.zone)?'<div><span class="pill '+(zone(b.zone).pri?'p-xn':'p-moi')+'">'+esc(zone(b.zone).name)+' · '+esc(zone(b.zone).grp)+'</span></div>':b.zone==='other'?'<div><span class="pill p-moi">Ngoài khu vực ưu tiên</span></div>':'');
-  h+='<div class="small muted">'+q.lines.map(l=>esc(l.name)+(l.qty>1?' ×'+l.qty:'')).join(' · ')+'</div>';
+  h+='<div class="small muted">'+q.lines.map(l=>esc(l.name)+(l.qty>1?' ×'+l.qty:'')+(l.ov?' ('+fmt(l.price)+')':'')).concat(q.extras.map(x=>esc(x.name)+' '+(x.amount<0?'−'+fmt(-x.amount):'+'+fmt(x.amount)))).join(' · ')+'</div>';
   if(b.note)h+='<div class="small">Ghi chú: '+esc(b.note)+'</div>';
   if(q.needsOrder)h+='<div class="flag">Kiểm tra đơn/y lệnh trước khi tiêm, truyền</div>';
   h+='<div class="row" style="justify-content:space-between"><b class="num">'+fmt(q.total)+'</b><div class="row">';
   if(b.status==='moi')h+='<button class="btn sm pri" data-act="st" data-id="'+b.id+'" data-s="xn">Xác nhận</button>';
   if(b.status==='xn'||b.status==='moi')h+='<button class="btn sm" data-act="st" data-id="'+b.id+'" data-s="ht">Hoàn thành</button>';
   h+='<button class="btn sm" data-act="mkrec" data-id="'+b.id+'">Phiếu chăm sóc</button><button class="btn sm" data-act="payqr" data-id="'+b.id+'">QR thu tiền</button><button class="btn sm" data-act="copybk" data-id="'+b.id+'">Sao chép</button>';
+  if(b.status!=='huy')h+='<button class="btn sm" data-act="editsvc" data-id="'+b.id+'">Sửa dịch vụ</button>';
+  if(b.status==='ht'||b.status==='ex')h+='<button class="btn sm" data-act="rebook" data-id="'+b.id+'">Đặt lại lịch</button>';
   if(b.status!=='huy'&&b.status!=='ht')h+='<button class="btn sm danger" data-act="st" data-id="'+b.id+'" data-s="huy">Hủy</button>';
   if(b.status==='huy'||b.sample)h+='<button class="btn sm danger" data-act="delbk" data-id="'+b.id+'">Xóa</button>';
   h+='</div></div></div>';});
@@ -916,7 +939,7 @@ function recForm(){
   rf('patient','Người bệnh','text')+rf('yob','Năm sinh','number')+rf('date','Ngày','date')+rf('time','Giờ','time')+'</div>'+
   '<div><label for="r-reason">Chẩn đoán / lý do chăm sóc</label><input id="r-reason" data-r="reason" value="'+esc(r.reason)+'"></div></div>';
  h+='<div class="card stack"><h3>Dấu hiệu sinh tồn</h3><div class="vit">'+vi('p','Mạch (l/ph)','80')+vi('bpS','HA tâm thu (mmHg)','120')+vi('bpD','HA tâm trương','80')+vi('t','Nhiệt độ (°C)','36.8','0.1')+vi('spo2','SpO₂ (%)','98')+vi('rr','Nhịp thở (l/ph)','18')+vi('glu','Đường huyết (mmol/L)','6.0','0.1')+'</div></div>';
- h+='<div class="card stack"><div><label for="r-done">Can thiệp đã thực hiện</label><textarea id="r-done" data-r="done">'+esc(r.done)+'</textarea></div><div><label for="r-assess">Nhận định điều dưỡng</label><textarea id="r-assess" data-r="assess">'+esc(r.assess)+'</textarea></div><div><label for="r-plan">Kế hoạch, dặn dò, hẹn lần sau</label><textarea id="r-plan" data-r="plan">'+esc(r.plan)+'</textarea></div>'+rf('staff','Người thực hiện','text')+'</div>';
+ h+='<div class="card stack"><div><label for="r-done">Can thiệp đã thực hiện</label><textarea id="r-done" data-r="done">'+esc(r.done)+'</textarea><div class="row" style="margin-top:6px"><select id="r-ins" style="flex:1;min-width:180px" aria-label="Chèn dịch vụ"><option value="">+ Chèn dịch vụ từ bảng giá…</option>'+catOptions(false,true)+'</select>'+(r.bookingId?'<button class="btn sm" data-act="rec-fromappt">Lấy theo lịch hẹn</button><button class="btn sm" data-act="rec-editsvc">Sửa dịch vụ lịch hẹn</button>':'')+'</div></div><div><label for="r-assess">Nhận định điều dưỡng</label><textarea id="r-assess" data-r="assess">'+esc(r.assess)+'</textarea></div><div><label for="r-plan">Kế hoạch, dặn dò, hẹn lần sau</label><textarea id="r-plan" data-r="plan">'+esc(r.plan)+'</textarea></div>'+rf('staff','Người thực hiện','text')+'</div>';
  h+='<div class="card stack"><div class="row" style="justify-content:space-between"><h3>Chữ ký người bệnh / người nhà</h3><button class="btn sm" data-act="sigclear">Ký lại</button></div><canvas class="sig" id="sig" aria-label="Khung ký tên"></canvas></div>';
  h+='<button class="btn pri" style="justify-content:center;padding:12px" data-act="saverec">Lưu phiếu</button>';
  return h;
@@ -973,21 +996,72 @@ function aPromos(){
 }
 /* ---- Báo cáo ---- */
 function aReport(){
- const bs=st.bookings.filter(b=>b.date.slice(0,7)===repMonth);
- const done=bs.filter(b=>b.status==='ht');const rev=done.reduce((a,b)=>a+(b.total||0),0);
- const byG={};GROUPS.forEach(g=>byG[g.id]={n:0,amt:0});const bySvc={};
- done.forEach(b=>quote(b).lines.forEach(l=>{byG[l.g].n+=l.qty;byG[l.g].amt+=l.amount;bySvc[l.name]=(bySvc[l.name]||0)+l.qty;}));
+ const inM=b=>b.date.slice(0,7)===repMonth;
+ const bs=st.bookings.filter(b=>inM(b)&&!isManual(b));
+ const done=st.bookings.filter(b=>inM(b)&&b.status==='ht').sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time));
+ const excl=st.bookings.filter(b=>inM(b)&&b.status==='ex');
+ const qs=new Map(done.map(b=>[b.id,quote(b)]));
+ const rev=done.reduce((a,b)=>a+qs.get(b.id).total,0);
+ const byG={};GROUPS.forEach(g=>byG[g.id]={n:0,amt:0});const bySvc={};let extraAmt=0,travelAmt=0;
+ done.forEach(b=>{const q=qs.get(b.id);q.lines.forEach(l=>{const G=byG[l.g]||byG.dd;G.n+=l.qty;G.amt+=l.amount;if(!l.manual)bySvc[l.name]=(bySvc[l.name]||0)+l.qty;});extraAmt+=q.extrasTotal+q.timeFee+q.holidayFee-q.discount;travelAmt+=q.travel;});
  const maxA=Math.max(1,...Object.values(byG).map(x=>x.amt));
  let h='<div class="row"><label for="repM" style="margin:0">Tháng</label><input id="repM" type="month" value="'+repMonth+'" style="width:auto"></div>';
- h+='<div class="tiles"><div class="tile"><div class="v">'+bs.length+'</div><div class="k">Lượt đặt</div></div><div class="tile"><div class="v">'+done.length+'</div><div class="k">Hoàn thành</div></div><div class="tile"><div class="v">'+bs.filter(b=>b.status==='huy').length+'</div><div class="k">Đã hủy</div></div><div class="tile"><div class="v num" style="font-size:1.05rem">'+fmt(rev)+'</div><div class="k">Doanh thu</div></div></div>';
- h+='<div class="card stack"><h3>Doanh thu dịch vụ theo nhóm (lượt hoàn thành)</h3>'+GROUPS.map(g=>'<div><div class="row" style="justify-content:space-between"><span class="small">'+esc(g.short)+' · '+byG[g.id].n+' lượt</span><b class="num small">'+fmt(byG[g.id].amt)+'</b></div><div class="row"><div class="bartrack"><div class="bar" style="width:'+(byG[g.id].amt/maxA*100)+'%"></div></div></div></div>').join('')+'</div>';
+ h+='<div class="tiles"><div class="tile"><div class="v">'+bs.length+'</div><div class="k">Lượt đặt</div></div><div class="tile"><div class="v">'+done.length+'</div><div class="k">Khoản tính doanh thu</div></div><div class="tile"><div class="v">'+bs.filter(b=>b.status==='huy').length+'</div><div class="k">Đã hủy</div></div><div class="tile"><div class="v num" style="font-size:1.05rem">'+fmt(rev)+'</div><div class="k">Doanh thu</div></div></div>';
+ h+='<div class="card stack"><h3>Doanh thu theo nhóm</h3>'+GROUPS.map(g=>'<div><div class="row" style="justify-content:space-between"><span class="small">'+esc(g.short)+' · '+byG[g.id].n+' lượt</span><b class="num small">'+fmt(byG[g.id].amt)+'</b></div><div class="row"><div class="bartrack"><div class="bar" style="width:'+(byG[g.id].amt/maxA*100)+'%"></div></div></div></div>').join('')+'<div class="row small" style="justify-content:space-between"><span>Đi lại</span><b class="num">'+fmt(travelAmt)+'</b></div><div class="row small" style="justify-content:space-between"><span>Phụ thu, giảm giá (cộng trừ)</span><b class="num">'+(extraAmt<0?'−'+fmt(-extraAmt):fmt(extraAmt))+'</b></div></div>';
+ // chi tiết khoản thu
+ h+='<div class="card stack"><div class="sec-h"><h3>Các khoản tính doanh thu</h3><span class="small muted">'+done.length+' khoản</span></div>';
+ if(!done.length)h+='<div class="muted small">Chưa có khoản nào trong tháng.</div>';
+ else{h+='<div class="tblwrap"><table class="rtbl"><thead><tr><th>Ngày</th><th>Nội dung</th><th class="r">Số tiền</th><th></th></tr></thead><tbody>';
+  done.forEach(b=>{const q=qs.get(b.id);const man=isManual(b);h+='<tr><td class="num">'+viDate(b.date).slice(0,5)+'</td><td><b>'+esc(man?q.lines[0].name:(b.patient||b.name))+'</b>'+(man?' <span class="pill p-acc">nhập tay</span>':'')+'<div class="small muted">'+(man?esc(GMAP[q.lines[0].g].short):q.lines.map(l=>esc(l.name)+(l.qty>1?' ×'+l.qty:'')).concat(q.extras.map(x=>esc(x.name))).join(' · '))+'</div></td><td class="r num">'+fmt(q.total)+'</td><td><div class="row" style="justify-content:flex-end;gap:4px"><button class="btn sm" data-act="editsvc" data-id="'+b.id+'">Sửa</button>'+(man?'<button class="btn sm danger" data-act="rep-del" data-id="'+b.id+'">Xóa</button>':'<button class="btn sm danger" data-act="rep-ex" data-id="'+b.id+'">Bỏ</button>')+'</div></td></tr>';});
+  h+='</tbody></table></div>';}
+ h+='<details class="addbox"'+(repAddOpen?' open':'')+'><summary>+ Thêm khoản thu</summary><div class="small muted" style="margin:6px 0">Cho khoản thu không đặt qua app: khách quen trả tiền mặt, dịch vụ làm thêm tại chỗ…</div><div class="grid2"><div><label for="rp-d">Ngày</label><input id="rp-d" type="date" value="'+(repMonth===todayISO().slice(0,7)?todayISO():repMonth+'-01')+'"></div><div><label for="rp-g">Nhóm</label>'+groupSelect('rp-g','dd')+'</div></div><div><label for="rp-n">Nội dung</label><input id="rp-n" placeholder="Ví dụ: Thay băng bà Tư, ấp 3 Nhựt Tảo"></div><div><label for="rp-a">Số tiền (đ)</label><input id="rp-a" type="number" min="0" step="1000" inputmode="numeric"></div><button class="btn pri sm" style="margin-top:8px" data-act="rep-add">Thêm vào báo cáo</button></details>';
+ if(excl.length){h+='<details class="addbox"><summary>Đã bỏ khỏi báo cáo ('+excl.length+')</summary><table class="rtbl" style="margin-top:6px"><tbody>'+excl.map(b=>'<tr><td class="num">'+viDate(b.date).slice(0,5)+'</td><td>'+esc(b.patient||b.name)+'</td><td class="r num">'+fmt(quote(b).total)+'</td><td><button class="btn sm" data-act="rep-restore" data-id="'+b.id+'">Khôi phục</button></td></tr>').join('')+'</tbody></table></details>';}
+ h+='</div>';
  const byZ={};bs.filter(b=>b.status!=='huy').forEach(b=>{const z=zone(b.zone);const k=z?z.name+' · '+z.grp.replace(' (cũ)',''):(b.zone==='other'?'Khu vực khác':'Chưa ghi khu vực');byZ[k]=(byZ[k]||0)+1;});
  const zr=Object.entries(byZ).sort((a,b)=>b[1]-a[1]);
  h+='<div class="card"><h3>Lượt đặt theo khu vực</h3>'+(zr.length?'<table><tbody>'+zr.map(([n,q])=>'<tr><td>'+esc(n)+'</td><td class="r num">'+q+'</td></tr>').join('')+'</tbody></table>':'<div class="muted small">Chưa có lượt đặt trong tháng.</div>')+'</div>';
  const top=Object.entries(bySvc).sort((a,b)=>b[1]-a[1]).slice(0,5);
  h+='<div class="card"><h3>Dịch vụ dùng nhiều nhất</h3>'+(top.length?'<table><tbody>'+top.map(([n,q])=>'<tr><td>'+esc(n)+'</td><td class="r num">'+q+'</td></tr>').join('')+'</tbody></table>':'<div class="muted small">Chưa có lượt hoàn thành trong tháng.</div>')+'</div>';
- h+='<div class="small muted">Doanh thu chưa trừ phụ phí đã thu hộ (thuốc, dịch truyền), chưa trừ phần chia cho phòng xét nghiệm và bác sĩ liên kết.</div>';
+ h+='<div class="small muted">“Bỏ” chỉ loại khỏi báo cáo, lịch hẹn vẫn còn và khôi phục được. Doanh thu chưa trừ thuốc, dịch truyền thu hộ và phần chia cho phòng xét nghiệm, bác sĩ liên kết.</div>';
  return h;
+}
+let repAddOpen=false;
+/* ---- Sửa dịch vụ của một lịch hẹn ---- */
+let edB=null;
+function syncBooking(b){if(isAdminSync()&&(b.srv||b.queued))push({a:'updateBooking',p:{data:pick(b,BK_FIELDS)}});}
+function openSvcEditor(id){const b=st.bookings.find(x=>x.id===id);if(!b)return;edB=JSON.parse(JSON.stringify(b));if(!Array.isArray(edB.items))edB.items=[];renderEd();}
+function edLineAmt(it){const q=quote({items:[it]});return it.k==='x'?q.extrasTotal:(q.lines[0]?q.lines[0].amount:0);}
+function edSumHTML(){const q=quote(edB);let h='<div class="sum"><span>Tiền dịch vụ</span><span class="num">'+fmt(q.subtotal)+'</span></div>';if(q.travel)h+='<div class="sum"><span>Đi lại</span><span class="num">'+fmt(q.travel)+'</span></div>';if(q.timeFee)h+='<div class="sum"><span>'+q.timeLbl+'</span><span class="num">'+fmt(q.timeFee)+'</span></div>';if(q.holidayFee)h+='<div class="sum"><span>Phụ thu lễ, Tết</span><span class="num">'+fmt(q.holidayFee)+'</span></div>';if(q.discount)h+='<div class="sum disc"><span>Mã '+esc(edB.promo)+'</span><span class="num">−'+fmt(q.discount)+'</span></div>';q.extras.forEach(x=>{h+='<div class="sum'+(x.amount<0?' disc':'')+'"><span>'+esc(x.name)+'</span><span class="num">'+(x.amount<0?'−'+fmt(-x.amount):fmt(x.amount))+'</span></div>';});h+='<div class="sum tot"><span>Tổng</span><span class="num">'+fmt(q.total)+'</span></div>';return h;}
+function renderEd(){
+ const b=edB;const man=isManual(b);
+ let h='<div class="stack"><div class="sec-h"><h2>'+(man?'Sửa khoản thu':'Dịch vụ của lịch '+esc(b.code))+'</h2><button class="btn sm ghost" data-act="close">Đóng</button></div>';
+ if(!man)h+='<div class="small muted">'+esc(b.patient||b.name)+' · '+esc(b.time)+' '+viDate(b.date)+' · '+STATUS[b.status]+'</div>';
+ h+='<div class="stack" style="gap:8px">';
+ if(!b.items.length)h+='<div class="muted small">Chưa có dịch vụ nào.</div>';
+ b.items.forEach((it,i)=>{
+  if(it.k==='x'){h+='<div class="eline"><div class="row" style="justify-content:space-between"><span class="pill '+((Number(it.price)||0)<0?'p-ht':'p-moi')+'">Phụ thu / giảm thêm</span><button class="btn sm danger" data-act="ed-del" data-i="'+i+'" aria-label="Xóa dòng">✕</button></div><div class="grid2"><div><label for="ei-'+i+'-n">Nội dung</label><input id="ei-'+i+'-n" data-ei="'+i+':name" value="'+esc(it.name)+'"></div><div><label for="ei-'+i+'-p">Số tiền (đ, âm = giảm)</label><input id="ei-'+i+'-p" type="number" step="1000" data-ei="'+i+':price" value="'+(Number(it.price)||0)+'"></div></div></div>';return;}
+  const s=it.k==='s'?svc(it.id):it.k==='p'?pkg(it.id):null;const list=s?s.price:null;
+  if(it.k!=='c'&&!s){h+='<div class="eline"><div class="row" style="justify-content:space-between"><span class="flag">Dịch vụ “'+esc(it.id)+'” không còn trong bảng giá</span><button class="btn sm danger" data-act="ed-del" data-i="'+i+'">✕</button></div></div>';return;}
+  h+='<div class="eline"><div class="row" style="justify-content:space-between;flex-wrap:nowrap">'+(it.k==='c'?'<input data-ei="'+i+':name" value="'+esc(it.name)+'" aria-label="Tên dịch vụ nhập tay">':'<b>'+esc(s.name)+'</b>')+'<button class="btn sm danger" data-act="ed-del" data-i="'+i+'" aria-label="Xóa dòng">✕</button></div>';
+  h+='<div class="row"><span class="qty"><button data-act="ed-dec" data-i="'+i+'" aria-label="Giảm">−</button><b class="num">'+(parseInt(it.qty,10)||1)+'</b><button data-act="ed-inc" data-i="'+i+'" aria-label="Tăng">+</button></span><label for="ei-'+i+'-p" style="margin:0">Đơn giá</label><input id="ei-'+i+'-p" class="pr-in num" type="number" min="0" step="1000" data-ei="'+i+':price" value="'+(it.price!==undefined&&it.price!==null&&it.price!==''?esc(it.price):'')+'" placeholder="'+(list!==null?list:'0')+'"><b class="num" id="ea-'+i+'">'+fmt(edLineAmt(it))+'</b></div>';
+  h+='<div class="small muted">'+(it.k==='c'?(it.manual?'Khoản thu nhập tay':'Dịch vụ nhập tay')+' · nhóm '+groupSelectInline(i,it.g):'Giá niêm yết '+fmt(list)+'. Để trống ô Đơn giá = dùng giá niêm yết.')+'</div></div>';
+ });
+ h+='</div>';
+ if(!man){
+  h+='<details class="addbox" open><summary>+ Chọn từ bảng giá</summary><div class="row" style="margin-top:8px;flex-wrap:nowrap"><select id="ed-cat" aria-label="Chọn dịch vụ">'+catOptions(true,false)+'</select><button class="btn sm pri" data-act="ed-addcat">Thêm</button></div></details>';
+  h+='<details class="addbox"><summary>+ Dịch vụ nhập tay</summary><div class="grid2" style="margin-top:8px"><div><label for="ed-cn">Tên dịch vụ</label><input id="ed-cn" placeholder="Ví dụ: Rửa tai"></div><div><label for="ed-cg">Nhóm</label>'+groupSelect('ed-cg','dd')+'</div><div><label for="ed-cp">Đơn giá (đ)</label><input id="ed-cp" type="number" min="0" step="1000"></div><div><label for="ed-cq">Số lượng</label><input id="ed-cq" type="number" min="1" value="1"></div></div><button class="btn sm" style="margin-top:8px" data-act="ed-addcus">Thêm dịch vụ</button></details>';
+  h+='<details class="addbox"><summary>+ Phụ thu / giảm thêm</summary><div class="grid2" style="margin-top:8px"><div><label for="ed-xn">Nội dung</label><input id="ed-xn" placeholder="Ví dụ: Phụ thu vật tư"></div><div><label for="ed-xa">Số tiền (đ, âm = giảm)</label><input id="ed-xa" type="number" step="1000"></div></div><button class="btn sm" style="margin-top:8px" data-act="ed-addx">Thêm</button></details>';
+ }
+ h+='<div id="edSum">'+edSumHTML()+'</div><div class="row"><button class="btn pri" data-act="ed-save">Lưu thay đổi</button><button class="btn ghost" data-act="close">Hủy</button></div></div>';
+ const box=document.querySelector('#modalRoot .box');const y=box?box.scrollTop:0;
+ openModal(h);const nb=document.querySelector('#modalRoot .box');if(nb)nb.scrollTop=y;
+}
+function groupSelectInline(i,val){return '<select data-ei="'+i+':g" style="width:auto;padding:2px 6px" aria-label="Nhóm">'+GROUPS.map(g=>'<option value="'+g.id+'"'+(g.id===val?' selected':'')+'>'+esc(g.short)+'</option>').join('')+'</select>';}
+function saveEd(){
+ const b=st.bookings.find(x=>x.id===edB.id);if(!b){closeModal();return;}
+ b.items=edB.items.filter(it=>it.k!=='x'||Number(it.price)).map(it=>Object.assign({},it,{qty:Math.max(1,parseInt(it.qty,10)||1)}));
+ b.total=quote(b).total;save();syncBooking(b);edB=null;closeModal();
+ if(editRec){toast('Đã lưu dịch vụ của lịch hẹn');}else{render();toast('Đã lưu, tổng '+fmt(b.total));}
 }
 /* ---- Cài đặt ---- */
 function aSettings(){
@@ -1084,6 +1158,29 @@ document.addEventListener('click',e=>{
   case 'delsvc':{const id=a.dataset.id;if(st.packages.some(p=>p.items.some(([s])=>s===id))){toast('Dịch vụ nằm trong gói, hãy bỏ dấu “Hiện” thay vì xóa');break;}st.cfgDirty=true;st.services=st.services.filter(s=>s.id!==id);st.cart=st.cart.filter(x=>!(x.k==='s'&&x.id===id));save();render();break;}
   case 'addzone':st.cfgDirty=true;st.zones.push({id:'z'+Date.now().toString(36),grp:'Khu vực khác',name:'Phường/xã mới',hint:'',fee:20000,pri:false,on:true});save();render();break;
   case 'delzone':st.cfgDirty=true;st.zones=st.zones.filter(z=>z.id!==a.dataset.id);save();render();break;
+  case 'editsvc':openSvcEditor(a.dataset.id);break;
+  case 'ed-inc':case 'ed-dec':{const it=edB&&edB.items[+a.dataset.i];if(it){it.qty=Math.max(1,(parseInt(it.qty,10)||1)+(act==='ed-inc'?1:-1));renderEd();}break;}
+  case 'ed-del':if(edB){edB.items.splice(+a.dataset.i,1);renderEd();}break;
+  case 'ed-addcat':{if(!edB)break;const v=($('#ed-cat')||{}).value||'';const [k,id]=v.split(':');if(!id)break;const ex=edB.items.find(x=>x.k===k&&x.id===id&&(x.price===undefined||x.price===''||x.price===null));if(ex)ex.qty=(parseInt(ex.qty,10)||1)+1;else edB.items.push({k,id,qty:1});renderEd();break;}
+  case 'ed-addcus':{if(!edB)break;const n=($('#ed-cn').value||'').trim();const pr=Math.max(0,Number($('#ed-cp').value)||0);if(!n){toast('Nhập tên dịch vụ');break;}edB.items.push({k:'c',id:uid('c'),name:n,g:$('#ed-cg').value,price:pr,qty:Math.max(1,parseInt($('#ed-cq').value,10)||1)});renderEd();break;}
+  case 'ed-addx':{if(!edB)break;const n=($('#ed-xn').value||'').trim()||'Phụ thu';const am=Math.round(Number($('#ed-xa').value)||0);if(!am){toast('Nhập số tiền');break;}edB.items.push({k:'x',id:uid('x'),name:n,price:am,qty:1});renderEd();break;}
+  case 'ed-save':saveEd();break;
+  case 'bk-addcus':{const n=($('#bc-n').value||'').trim();const pr=Math.max(0,Number($('#bc-p').value)||0);if(!n){toast('Nhập tên dịch vụ');break;}readDraft();st.cart.push({k:'c',id:uid('c'),name:n,g:$('#bc-g').value,price:pr,qty:Math.max(1,parseInt($('#bc-q').value,10)||1)});save();$('#bc-n').value='';$('#bc-p').value='';$('#bc-q').value='1';$('#bkItems').innerHTML=bkItemsHTML();$('#bkSum').innerHTML=bkSumHTML();toast('Đã thêm '+n);break;}
+  case 'bk-addx':{const n=($('#bx-n').value||'').trim()||'Phụ thu';const am=Math.round(Number($('#bx-a').value)||0);if(!am){toast('Nhập số tiền');break;}readDraft();st.cart.push({k:'x',id:uid('x'),name:n,price:am,qty:1});save();$('#bx-n').value='';$('#bx-a').value='';$('#bkItems').innerHTML=bkItemsHTML();$('#bkSum').innerHTML=bkSumHTML();break;}
+  case 'bk-delx':readDraft();st.cart=st.cart.filter(x=>x.id!==a.dataset.id);save();$('#bkItems').innerHTML=bkItemsHTML();$('#bkSum').innerHTML=bkSumHTML();break;
+  case 'rebook':{const b=st.bookings.find(x=>x.id===a.dataset.id);if(!b)break;
+   draftFromAdmin=true;draft={name:b.name,phone:b.phone,patient:b.patient,yob:b.yob||'',addr:b.addr,zone:b.zone||'',km:b.km||'',date:todayISO(1),time:b.time||'08:00',holiday:false,promo:'',note:b.note||'',consent:true};
+   st.cart=(b.items||[]).filter(it=>!it.manual).map(it=>Object.assign({},it,it.k==='c'||it.k==='x'?{id:uid(it.k)}:{}));save();location.hash='#booking';toast('Đã chép dịch vụ và thông tin khách, chọn ngày giờ mới');break;}
+  case 'rep-ex':case 'rep-restore':{const b=st.bookings.find(x=>x.id===a.dataset.id);if(!b)break;b.status=act==='rep-ex'?'ex':'ht';save();render();syncBooking(b);toast(act==='rep-ex'?'Đã bỏ khỏi báo cáo':'Đã khôi phục');break;}
+  case 'rep-del':{const b=st.bookings.find(x=>x.id===a.dataset.id);if(!b)break;st.bookings=st.bookings.filter(x=>x.id!==b.id);save();render();if(isAdminSync()&&(b.srv||b.queued))push({a:'deleteBooking',p:{id:b.id}});toast('Đã xóa khoản thu');break;}
+  case 'rep-add':{const d=$('#rp-d').value,n=($('#rp-n').value||'').trim(),am=Math.max(0,Math.round(Number($('#rp-a').value)||0)),g=$('#rp-g').value;
+   if(!d||!n||!am){toast('Nhập đủ ngày, nội dung và số tiền');break;}
+   const b={id:uid('b'),code:'TT'+d.slice(2).replace(/-/g,'')+'-'+(100+Math.floor(Math.random()*900)),created:Date.now(),date:d,time:'12:00',name:n.slice(0,80),phone:'0000000000',patient:n.slice(0,80),yob:'',addr:'-',zone:'',km:'',holiday:false,promo:'',note:'Khoản thu nhập tay',items:[{k:'c',id:uid('c'),name:n,g,price:am,qty:1,manual:true}],status:'ht'};b.total=quote(b).total;
+   st.bookings.unshift(b);repAddOpen=true;repMonth=d.slice(0,7);save();render();
+   if(isAdminSync()){b.queued=true;st.queue.push({a:'adminCreateBooking',p:{data:pick(b,BK_FIELDS)},localId:b.id});push({a:'updateBooking',p:{data:pick(b,BK_FIELDS)}});}
+   toast('Đã thêm '+fmt(am)+' vào báo cáo');break;}
+  case 'rec-fromappt':{const b=st.bookings.find(x=>x.id===editRec.bookingId);if(!b)break;const q=quote(b);editRec.done=q.lines.map(l=>l.name+(l.qty>1?' × '+l.qty:'')).join('; ');$('#r-done').value=editRec.done;break;}
+  case 'rec-editsvc':if(editRec&&editRec.bookingId)openSvcEditor(editRec.bookingId);break;
   case 'addpromo':st.cfgDirty=true;st.promos.push({code:'MAMOI',name:'Mô tả ưu đãi',type:'pct',value:5,max:0,min:0,scope:'all',end:'',on:false});save();render();break;
   case 'delpromo':st.cfgDirty=true;st.promos.splice(+a.dataset.i,1);save();render();break;
   case 'backup':copyText(JSON.stringify(Object.assign({},st,{sync:Object.assign({},st.sync,{key:''})})));break;
@@ -1105,6 +1202,7 @@ document.addEventListener('change',e=>{
  if(t.dataset&&t.dataset.edit){applyEdit(t);if(t.tagName==='SELECT'||t.type==='checkbox'||t.dataset.edit.startsWith('pkg')||t.dataset.edit.endsWith(':price')||t.dataset.edit.endsWith(':fee'))render();return;}
  if(t.id==='restoreFile'&&t.files&&t.files[0]){const fr=new FileReader();fr.onload=()=>doRestore(fr.result);fr.readAsText(t.files[0]);}
  if(t.id==='zf'){zoneFilter=t.value;render();return;}
+ if(t.id==='r-ins'&&editRec&&t.value){editRec.done=(editRec.done?editRec.done.replace(/[;\s]+$/,'')+'; ':'')+t.value;$('#r-done').value=editRec.done;t.value='';return;}
  if(t.id==='repM'){repMonth=t.value||repMonth;render();}
  if(t.id==='r-bookingId'){editRec.bookingId=t.value;}
 });
@@ -1112,6 +1210,7 @@ document.addEventListener('input',e=>{
  const t=e.target;
  if(t.id==='priceSearch'){priceQ=t.value;$('#priceList').innerHTML=priceListHTML(priceQ.trim().toLowerCase());return;}
  if(t.closest&&t.closest('#bkForm')){readDraft();if(t.id==='f-zone'){const w=$('#kmWrap');if(w)w.hidden=draft.zone!=='other';}$('#bkSum').innerHTML=bkSumHTML();return;}
+ if(t.dataset&&t.dataset.ei&&edB){const [i,f]=t.dataset.ei.split(':');const it=edB.items[+i];if(it){it[f]=f==='price'?(t.value===''?'':Number(t.value)):t.value;const ea=$('#ea-'+i);if(ea)ea.textContent=fmt(edLineAmt(it));const es=$('#edSum');if(es)es.innerHTML=edSumHTML();}return;}
  if(t.dataset&&t.dataset.sync){st.sync[t.dataset.sync]=t.value.trim();st.sync.err='';save();updateSyncChip();return;}
  if(t.dataset&&t.dataset.r&&editRec){editRec[t.dataset.r]=t.value;return;}
  if(t.dataset&&t.dataset.v&&editRec){const k=t.dataset.v;editRec.v[k]=t.value;
